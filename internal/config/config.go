@@ -9,10 +9,10 @@ import (
 )
 
 type Config struct {
-	TelegramToken  string
-	DatabasePath   string
-	GSTMultiplier  float64
-	ScrapeInterval int
+	TelegramToken     string
+	DatabasePath      string
+	GSTMultiplier     float64
+	ScrapeInterval    int
 	BroadcastInterval int
 }
 
@@ -25,7 +25,7 @@ func LoadConfig() *Config {
 		TelegramToken:     getEnv("API_KEY", ""),
 		DatabasePath:      getEnv("DB_PATH", "database.db"),
 		GSTMultiplier:     getEnvAsFloat("GST_MULTIPLIER", 1.03),
-		ScrapeInterval:    getEnvAsInt("SCRAPE_INTERVAL", 1),    // hours
+		ScrapeInterval:    getEnvAsInt("SCRAPE_INTERVAL", 2),    // hours
 		BroadcastInterval: getEnvAsInt("BROADCAST_INTERVAL", 2), // hours
 	}
 }

@@ -27,3 +27,25 @@ func GetLatestGoldPrice(db *gorm.DB) (models.GoldPrice, error) {
 	result := db.Order("timestamp desc").First(&latestPrice)
 	return latestPrice, result.Error
 }
+
+func GetLatestGoldPriceIfChanged(db *gorm.DB) (models.GoldPrice, bool, error) {
+	var recentPrices []models.GoldPrice
+	result := db.Order("timestamp desc").Limit(2).Find(&recentPrices)
+	if result.Error != nil {
+		return models.GoldPrice{}, false, result.Error
+	}
+
+	if len(recentPrices) == 0 {
+		return models.GoldPrice{}, false, nil
+	}
+
+	if len(recentPrices) == 1 {
+		return recentPrices[0], true, nil
+	}
+
+	if recentPrices[0].Price != recentPrices[1].Price {
+		return recentPrices[0], true, nil
+	}
+
+	return models.GoldPrice{}, false, nil
+}

@@ -2,15 +2,13 @@ package scraper
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"log"
 	"strconv"
-	"time"
+	"strings"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
+	"github.com/gocolly/colly/v2"
 )
 
 func extractNum(input string) (int, error) {
@@ -31,41 +29,36 @@ func extractNum(input string) (int, error) {
 }
 
 func ScrapeGoldPrice(gstMultiplier float64) (float64, error) {
-	u := launcher.New().
-		Headless(true).
-		Set("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36").
-		MustLaunch()
+	c := colly.NewCollector(
+		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
+	)
 
-	browser := rod.New().ControlURL(u).MustConnect()
-	defer browser.MustClose()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	page := browser.Context(ctx).MustPage()
-
-	log.Println("Navigating to target site...")
-	err := rod.Try(func() {
-		page.MustNavigate("https://www.ibja.co/")
-		page.MustWaitLoad()
-	})
-	if err != nil {
-		return 0, fmt.Errorf("navigation failed: %v", err)
-	}
-
-	log.Println("Page loaded. Waiting for stability...")
-	time.Sleep(2 * time.Second)
-
-	log.Println("Locating element...")
 	var priceStr string
-	err = rod.Try(func() {
-		el := page.MustElement("#lblFineGold999")
-		el.MustWaitVisible()
-		priceStr = el.MustText()
+	var err error
+
+	c.OnHTML("#lblFineGold999", func(e *colly.HTMLElement) {
+		priceStr = strings.TrimSpace(e.Text)
 	})
-	if err != nil {
-		return 0, fmt.Errorf("element rendering timed out: %v", err)
+
+	c.OnError(func(r *colly.Response, e error) {
+		err = fmt.Errorf("request failed with status %d: %v", r.StatusCode, e)
+	})
+
+	log.Println("Navigating to target site with Colly...")
+	visitErr := c.Visit("https://www.ibja.co/")
+	if visitErr != nil {
+		return 0, visitErr
 	}
+
+	if err != nil {
+		return 0, err
+	}
+
+	if priceStr == "" {
+		return 0, errors.New("could not find price element on page")
+	}
+
+	log.Printf("Found price string: %s", priceStr)
 
 	numVal, err := extractNum(priceStr)
 	if err != nil {
