@@ -1,0 +1,13 @@
+.git
+.github
+tmp/
+data/
+*.db
+.env
+.env.example
+docker-compose.yml
+Dockerfile
+.dockerignore
+gold-price-api
+services/
+README.md

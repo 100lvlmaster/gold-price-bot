@@ -76,7 +76,30 @@ func handleCommand(bot *tgbotapi.BotAPI, db *gorm.DB, chatID int64, command stri
 		} else {
 			ist := time.FixedZone("IST", 5.5*60*60)
 			istTime := latest.Timestamp.In(ist)
-			responseText = fmt.Sprintf("Latest Gold Price: ₹%.2f\nTime: %s", latest.Price, istTime.Format("2006-01-02 15:04:05"))
+
+			stats, err := database.GetGoldPriceStats(db)
+			if err == nil {
+				responseText = fmt.Sprintf(
+					"Latest Gold Price: ₹%.2f\n"+
+						"Time: %s (IST)\n\n"+
+						"📈 Historical Stats:\n"+
+						"• Week Avg:  ₹%.2f\n"+
+						"• Week High: ₹%.2f | Low: ₹%.2f\n"+
+						"• Month High: ₹%.2f | Low: ₹%.2f\n"+
+						"• Year High:  ₹%.2f | Low: ₹%.2f\n"+
+						"• All-Time High: ₹%.2f | Low: ₹%.2f",
+					latest.Price,
+					istTime.Format("2006-01-02 15:04:05"),
+					stats.WeekAvg,
+					stats.WeekHigh, stats.WeekLow,
+					stats.MonthHigh, stats.MonthLow,
+					stats.YearHigh, stats.YearLow,
+					stats.AllTimeHigh, stats.AllTimeLow,
+				)
+			} else {
+				log.Printf("Error generating historical stats for /recent: %v", err)
+				responseText = fmt.Sprintf("Latest Gold Price: ₹%.2f\nTime: %s (IST)", latest.Price, istTime.Format("2006-01-02 15:04:05"))
+			}
 		}
 
 		msg := tgbotapi.NewMessage(chatID, responseText)

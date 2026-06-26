@@ -12,66 +12,72 @@ import (
 	"gorm.io/gorm"
 )
 
+const timeformat = "2006-01-02 03:04 PM"
+
 // TelegramBot defines the interface for sending messages to allow mocking in unit tests.
 type TelegramBot interface {
 	Send(c tgbotapi.Chattable) (tgbotapi.Message, error)
 }
 
-func StartGoldPriceWorker(db *gorm.DB, intervalHours int, gstMultiplier float64) {
-	ticker := time.NewTicker(time.Duration(intervalHours) * time.Hour)
+func StartGoldPriceWorker(bot TelegramBot, db *gorm.DB, intervalHours int, gstMultiplier float64) {
 	go func() {
-		for {
-			log.Println("Fetching gold price...")
-			price, err := scraper.ScrapeGoldPrice(gstMultiplier)
-			if err != nil {
-				log.Printf("Error scraping gold price: %v", err)
-			} else {
-				goldPrice := models.GoldPrice{
-					Price:     price,
-					Timestamp: time.Now().UTC(),
-				}
-				if err := db.Create(&goldPrice).Error; err != nil {
-					log.Printf("Error saving gold price to database: %v", err)
-				} else {
-					log.Printf("Successfully saved gold price: %.2f", price)
-				}
-			}
-			<-ticker.C
-		}
-	}()
-}
-
-func StartTelegramBroadcastWorker(bot TelegramBot, db *gorm.DB, intervalHours int) {
-	go func() {
-		// Wait a few seconds for the first scrape to complete
-		time.Sleep(10 * time.Second)
-
-		log.Println("Performing initial startup broadcast...")
-		if latest, err := database.GetLatestGoldPrice(db); err == nil {
-			broadcastToAllUsers(bot, db, latest)
-		} else {
-			log.Printf("Error fetching latest price for startup broadcast: %v", err)
-		}
+		// Run first execution immediately on startup
+		log.Println("Executing initial startup scrape and broadcast...")
+		runScrapeAndBroadcast(bot, db, gstMultiplier, true)
 
 		ticker := time.NewTicker(time.Duration(intervalHours) * time.Hour)
 		defer ticker.Stop()
 
 		for {
 			<-ticker.C
-			log.Println("Checking for price changes for scheduled broadcast...")
-			latest, priceChanged, err := database.GetLatestGoldPriceIfChanged(db)
-			if err != nil {
-				log.Printf("Error fetching latest price for broadcast: %v", err)
-				continue
-			}
-
-			if priceChanged {
-				broadcastToAllUsers(bot, db, latest)
-			} else {
-				log.Println("Price hasn't changed, skipping scheduled broadcast.")
-			}
+			log.Println("Executing scheduled scrape and broadcast check...")
+			runScrapeAndBroadcast(bot, db, gstMultiplier, false)
 		}
 	}()
+}
+
+func runScrapeAndBroadcast(bot TelegramBot, db *gorm.DB, gstMultiplier float64, isStartup bool) {
+	log.Println("Fetching gold price...")
+	price, err := scraper.ScrapeGoldPrice(gstMultiplier)
+	if err != nil {
+		log.Printf("Error scraping gold price: %v", err)
+		// If scrape fails during startup, we still try to broadcast the last known price from DB
+		if isStartup {
+			if latest, err := database.GetLatestGoldPrice(db); err == nil {
+				log.Println("Scrape failed on startup. Broadcasting last known gold price from database...")
+				broadcastToAllUsers(bot, db, latest)
+			}
+		}
+		return
+	}
+
+	goldPrice := models.GoldPrice{
+		Price:     price,
+		Timestamp: time.Now().UTC(),
+	}
+	if err := db.Create(&goldPrice).Error; err != nil {
+		log.Printf("Error saving gold price to database: %v", err)
+		return
+	}
+	log.Printf("Successfully saved gold price: %.2f", price)
+
+	if isStartup {
+		// Always broadcast on startup
+		broadcastToAllUsers(bot, db, goldPrice)
+	} else {
+		// Only broadcast if the price changed compared to the previous record
+		_, priceChanged, err := database.GetLatestGoldPriceIfChanged(db)
+		if err != nil {
+			log.Printf("Error checking if gold price changed: %v", err)
+			return
+		}
+		if priceChanged {
+			log.Println("Gold price changed. Broadcasting to all active users...")
+			broadcastToAllUsers(bot, db, goldPrice)
+		} else {
+			log.Println("Gold price has not changed. Skipping broadcast.")
+		}
+	}
 }
 
 func broadcastToAllUsers(bot TelegramBot, db *gorm.DB, latest models.GoldPrice) {
@@ -81,9 +87,14 @@ func broadcastToAllUsers(bot TelegramBot, db *gorm.DB, latest models.GoldPrice) 
 		return
 	}
 
-	ist := time.FixedZone("IST", 5.5*60*60)
-	istTime := latest.Timestamp.In(ist)
-	responseText := fmt.Sprintf("Gold Price Update: ₹%.2f\nTime: %s", latest.Price, istTime.Format("2006-01-02 15:04:05"))
+	// stats, err := database.GetGoldPriceStats(db)
+	var responseText string
+	// if err == nil {
+	responseText = fmt.Sprintf(
+		"Gold Price Update: ₹%.2f",
+		latest.Price,
+	)
+	// }
 
 	for _, user := range users {
 		msg := tgbotapi.NewMessage(user.ChatID, responseText)

@@ -29,9 +29,8 @@ func main() {
 	}
 
 	// 4. Start Background Workers
-	worker.StartGoldPriceWorker(db, cfg.ScrapeInterval, cfg.GSTMultiplier)
 	bot.StartTelegramBot(telegramBot, db)
-	worker.StartTelegramBroadcastWorker(telegramBot, db, cfg.BroadcastInterval)
+	worker.StartGoldPriceWorker(telegramBot, db, cfg.BroadcastInterval, cfg.GSTMultiplier)
 
 	// 5. Setup HTTP Handlers
 	h := handlers.NewHandler(db)

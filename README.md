@@ -35,8 +35,14 @@ go build -o gold-price-api ./cmd/api/main.go
 ## 3. How to Deploy using GitHub Actions
 
 1. **Prerequisites on Target Server (DigitalOcean Droplet):**
-   - The bot binary will be copied to `/var/www/goldprice-bot`.
-   - Ensure a systemd service named `goldprice-bot.service` exists to manage and auto-restart the bot.
+   - Ensure target directory `/var/www/goldprice-bot` exists.
+   - Copy the service file and enable it:
+     ```bash
+     sudo cp services/goldprice-bot.service /etc/systemd/system/
+     sudo systemctl daemon-reload
+     sudo systemctl enable goldprice-bot.service
+     sudo systemctl start goldprice-bot.service
+     ```
 
 2. **Configure GitHub Repository Secrets:**
    Add the following secrets under **Settings > Secrets and variables > Actions**:
@@ -47,3 +53,38 @@ go build -o gold-price-api ./cmd/api/main.go
 3. **Deploy:**
    - Push to the `main` branch to trigger the workflow.
    - The workflow (`.github/workflows/deploy.yml`) builds the binary, copies it to the server, and restarts `goldprice-bot.service`.
+
+## 4. Deploying with Docker Compose
+
+1. **Configure Environment:**
+   Ensure your `.env` file is created and set correctly (from `.env.example`).
+
+2. **Start Services:**
+   Run the following command to build the image and start the container in detached mode:
+   ```bash
+   docker compose up -d --build
+   ```
+   This will mount the SQLite database under `./data/database.db` to ensure persistence.
+
+## 5. Running with Docker CLI
+
+If you prefer using the Docker CLI directly instead of Docker Compose:
+
+1. **Build the Image:**
+   ```bash
+   docker build -t gold-price-api .
+   ```
+
+2. **Run the Container:**
+   ```bash
+   docker run -d \
+     --name goldprice-bot \
+     -p 8080:8080 \
+     --env-file .env \
+     -e DB_PATH=/app/data/database.db \
+     -v $(pwd)/data:/app/data \
+     --restart unless-stopped \
+     gold-price-api
+   ```
+
+
