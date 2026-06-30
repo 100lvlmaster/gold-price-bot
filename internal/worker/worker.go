@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const timeformat = "2006-01-02 03:04 PM"
+// const timeformat = "2006-01-02 03:04 PM"
 
 // TelegramBot defines the interface for sending messages to allow mocking in unit tests.
 type TelegramBot interface {
@@ -36,17 +36,20 @@ func StartGoldPriceWorker(bot TelegramBot, db *gorm.DB, intervalHours int, gstMu
 	}()
 }
 
+// Scrape gold price
+// 1. Broadcast on first run
+// 2. Skip if price hasn't changed since last time.
+// 3. Broadcast and save to DB once price changes.
 func runScrapeAndBroadcast(bot TelegramBot, db *gorm.DB, gstMultiplier float64, isStartup bool) {
 	log.Println("Fetching gold price...")
 	price, err := scraper.ScrapeGoldPrice(gstMultiplier)
+	latest, latestError := database.GetLatestGoldPrice(db)
 	if err != nil {
 		log.Printf("Error scraping gold price: %v", err)
 		// If scrape fails during startup, we still try to broadcast the last known price from DB
-		if isStartup {
-			if latest, err := database.GetLatestGoldPrice(db); err == nil {
-				log.Println("Scrape failed on startup. Broadcasting last known gold price from database...")
-				broadcastToAllUsers(bot, db, latest)
-			}
+		if isStartup && latestError == nil {
+			log.Println("Scrape failed on startup. Broadcasting last known gold price from database...")
+			broadcastToAllUsers(bot, db, latest)
 		}
 		return
 	}
@@ -55,29 +58,24 @@ func runScrapeAndBroadcast(bot TelegramBot, db *gorm.DB, gstMultiplier float64, 
 		Price:     price,
 		Timestamp: time.Now().UTC(),
 	}
-	if err := db.Create(&goldPrice).Error; err != nil {
-		log.Printf("Error saving gold price to database: %v", err)
-		return
-	}
-	log.Printf("Successfully saved gold price: %.2f", price)
 
 	if isStartup {
 		// Always broadcast on startup
 		broadcastToAllUsers(bot, db, goldPrice)
-	} else {
-		// Only broadcast if the price changed compared to the previous record
-		_, priceChanged, err := database.GetLatestGoldPriceIfChanged(db)
-		if err != nil {
-			log.Printf("Error checking if gold price changed: %v", err)
-			return
-		}
-		if priceChanged {
-			log.Println("Gold price changed. Broadcasting to all active users...")
-			broadcastToAllUsers(bot, db, goldPrice)
-		} else {
-			log.Println("Gold price has not changed. Skipping broadcast.")
-		}
 	}
+
+	if latest.Price == price {
+		log.Printf("Price has not changed since last time. Not saving.")
+		return
+	}
+
+	if err := db.Create(&goldPrice).Error; err != nil {
+		log.Printf("Error saving gold price to database: %v", err)
+		return
+	}
+
+	log.Printf("Successfully saved gold price: %.2f", price)
+	broadcastToAllUsers(bot, db, goldPrice)
 }
 
 func broadcastToAllUsers(bot TelegramBot, db *gorm.DB, latest models.GoldPrice) {
