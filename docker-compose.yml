@@ -1,8 +1,7 @@
 services:
   goldprice-bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/100lvlmaster/gold-price-bot:latest
+    pull_policy: always
     ports:
       - "8080:8080"
     env_file:

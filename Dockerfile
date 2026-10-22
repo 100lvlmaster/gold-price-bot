@@ -19,7 +19,7 @@ COPY . .
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o gold-price-api ./cmd/api/main.go
 
 # Stage 2: Final minimal production image
-FROM alpine:latest
+FROM alpine:latest  
 
 # Install CA certificates (required for secure Telegram API communication)
 RUN apk add --no-cache ca-certificates
@@ -30,7 +30,7 @@ WORKDIR /app
 COPY --from=builder /app/gold-price-api .
 
 # Copy .env
-COPY --from=builder /app/.env .
+# COPY --from=builder /app/.env .
 
 # Expose the API port
 EXPOSE 8080
