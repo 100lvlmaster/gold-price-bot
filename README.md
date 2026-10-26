@@ -32,33 +32,38 @@ Build the production API binary:
 CGO_ENABLED=1 go build -ldflags="-w -s" -o gold-price-api ./cmd/api/main.go
 ```
 
-## 3. How to Deploy using GitHub Actions
+## 3. How to Deploy using GitHub Actions (self-hosted runner)
 
-1. **Prerequisites on Target Server (DigitalOcean Droplet):**
-   - Ensure target directory `/var/www/goldprice-bot` exists:
-     ```bash
-     sudo mkdir -p /var/www/goldprice-bot
-     ```
-   - Place your `.env` file on the server (it is gitignored, so CI cannot ship it):
-     ```bash
-     sudo cp .env /var/www/goldprice-bot/.env
-     ```
-   - Copy the service file and enable it (one-time setup):
-     ```bash
-     sudo cp services/goldprice-bot.service /etc/systemd/system/
-     sudo systemctl daemon-reload
-     sudo systemctl enable --now goldprice-bot.service
-     ```
+Deployment uses a **self-hosted runner** running directly on the VPS. No inbound SSH is required, so it works even when the provider blocks GitHub's datacenter IPs.
 
-2. **Configure GitHub Repository Secrets:**
-   Add the following secrets under **Settings > Secrets and variables > Actions**:
-   - `DO_HOST`: Server IP address or domain.
-   - `DO_USERNAME`: SSH login username.
-   - `DO_SSH_KEY`: SSH private key.
+### 3.1 One-time server setup
 
-3. **Deploy:**
-   - Push to the `main` branch to trigger the workflow.
-   - The workflow (`.github/workflows/deploy.yml`) builds the binary, copies it to `/var/www/goldprice-bot`, copies the service file to `/etc/systemd/system`, and restarts `goldprice-bot.service`.
+1. **Install Go and build tools** (sqlite3 needs CGO/gcc):
+   ```bash
+   apt update
+   apt install -y golang-go build-essential git
+   ```
+
+2. **Create the target directory and place `.env`** (gitignored, so CI cannot ship it):
+   ```bash
+   mkdir -p /var/www/goldprice-bot
+   cp .env /var/www/goldprice-bot/.env
+   ```
+
+3. **Add a self-hosted runner:**
+   - In the repo: **Settings → Actions → Runners → New self-hosted runner**.
+   - Pick **Linux** and **x64**, then follow the **Download** and **Configure** commands on the server.
+   - When prompted for a runner group, use the default. For labels, keep `self-hosted` (the workflow matches on it).
+
+4. **Run the runner as root** so it can write to `/var/www` and `/etc/systemd/system`:
+   ```bash
+   sudo ./svc.sh install
+   sudo ./svc.sh start
+   ```
+
+### 3.2 Deploy
+
+Push to `main`. The workflow (`.github/workflows/deploy.yml`) runs on the server, builds the binary, installs it to `/var/www/goldprice-bot`, installs the systemd unit, and restarts `goldprice-bot.service`.
 
 ## 4. Migrating from Docker
 

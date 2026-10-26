@@ -1,12 +1,12 @@
-name: Deploy to VPS
+name: Deploy
 
 on:
   push:
     branches: [main]
 
 jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
+  deploy:
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -17,35 +17,12 @@ jobs:
           go-version-file: go.mod
 
       - name: Build binary
-        run: CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o gold-price-api ./cmd/api/main.go
+        run: CGO_ENABLED=1 go build -ldflags="-w -s" -o gold-price-api ./cmd/api/main.go
 
-      - name: Copy binary to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DO_HOST }}
-          username: ${{ secrets.DO_USERNAME }}
-          key: ${{ secrets.DO_SSH_KEY }}
-          source: "gold-price-api"
-          target: "/var/www/goldprice-bot"
-
-      - name: Copy service file to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DO_HOST }}
-          username: ${{ secrets.DO_USERNAME }}
-          key: ${{ secrets.DO_SSH_KEY }}
-          source: "services/goldprice-bot.service"
-          target: "/etc/systemd/system"
-
-      - name: Install and restart service on server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DO_HOST }}
-          username: ${{ secrets.DO_USERNAME }}
-          key: ${{ secrets.DO_SSH_KEY }}
-          script: |
-            mkdir -p /var/www/goldprice-bot
-            chmod +x /var/www/goldprice-bot/gold-price-api
-            systemctl daemon-reload
-            systemctl enable --now goldprice-bot.service
-            systemctl restart goldprice-bot.service
+      - name: Install binary and service
+        run: |
+          install -Dm755 gold-price-api /var/www/goldprice-bot/gold-price-api
+          install -Dm644 services/goldprice-bot.service /etc/systemd/system/goldprice-bot.service
+          systemctl daemon-reload
+          systemctl enable --now goldprice-bot.service
+          systemctl restart goldprice-bot.service
