@@ -29,19 +29,25 @@ A Go-based Telegram bot that fetches gold prices and sends updates/pings to regi
 
 Build the production API binary:
 ```bash
-go build -o gold-price-api ./cmd/api/main.go
+CGO_ENABLED=1 go build -ldflags="-w -s" -o gold-price-api ./cmd/api/main.go
 ```
 
 ## 3. How to Deploy using GitHub Actions
 
 1. **Prerequisites on Target Server (DigitalOcean Droplet):**
-   - Ensure target directory `/var/www/goldprice-bot` exists.
-   - Copy the service file and enable it:
+   - Ensure target directory `/var/www/goldprice-bot` exists:
+     ```bash
+     sudo mkdir -p /var/www/goldprice-bot
+     ```
+   - Place your `.env` file on the server (it is gitignored, so CI cannot ship it):
+     ```bash
+     sudo cp .env /var/www/goldprice-bot/.env
+     ```
+   - Copy the service file and enable it (one-time setup):
      ```bash
      sudo cp services/goldprice-bot.service /etc/systemd/system/
      sudo systemctl daemon-reload
-     sudo systemctl enable goldprice-bot.service
-     sudo systemctl start goldprice-bot.service
+     sudo systemctl enable --now goldprice-bot.service
      ```
 
 2. **Configure GitHub Repository Secrets:**
@@ -52,39 +58,12 @@ go build -o gold-price-api ./cmd/api/main.go
 
 3. **Deploy:**
    - Push to the `main` branch to trigger the workflow.
-   - The workflow (`.github/workflows/deploy.yml`) builds the binary, copies it to the server, and restarts `goldprice-bot.service`.
+   - The workflow (`.github/workflows/deploy.yml`) builds the binary, copies it to `/var/www/goldprice-bot`, copies the service file to `/etc/systemd/system`, and restarts `goldprice-bot.service`.
 
-## 4. Deploying with Docker Compose
+## 4. Migrating from Docker
 
-1. **Configure Environment:**
-   Ensure your `.env` file is created and set correctly (from `.env.example`).
-
-2. **Start Services:**
-   Run the following command to build the image and start the container in detached mode:
-   ```bash
-   docker compose up -d --build
-   ```
-   This will mount the SQLite database under `./data/database.db` to ensure persistence.
-
-## 5. Running with Docker CLI
-
-If you prefer using the Docker CLI directly instead of Docker Compose:
-
-1. **Build the Image:**
-   ```bash
-   docker build -t gold-price-api .
-   ```
-
-2. **Run the Container:**
-   ```bash
-   docker run -d \
-     --name goldprice-bot \
-     -p 8080:8080 \
-     --env-file .env \
-     -e DB_PATH=/app/data/database.db \
-     -v $(pwd)/data:/app/data \
-     --restart unless-stopped \
-     gold-price-api
-   ```
-
-
+If you previously ran the bot via Docker Compose, stop the old container to free port 8080:
+```bash
+cd /opt/goldprice-bot
+docker compose down
+```
