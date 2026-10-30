@@ -1,0 +1,16 @@
+services:
+  goldprice-bot:
+    build: .
+    container_name: goldprice-bot
+    restart: unless-stopped
+    environment:
+      API_KEY: ${API_KEY}
+      DB_PATH: /data/database.db
+      APP_ENV: production
+      GST_MULTIPLIER: ${GST_MULTIPLIER:-1.03}
+      SCRAPE_INTERVAL: ${SCRAPE_INTERVAL:-2}
+      BROADCAST_INTERVAL: ${BROADCAST_INTERVAL:-2}
+    ports:
+      - "8080:8080"
+    volumes:
+      - /home/admin/goldprice-bot/data:/data

@@ -1,0 +1,16 @@
+[Unit]
+Description=Gold Price Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=admin
+Group=admin
+Type=simple
+WorkingDirectory=/home/admin/goldprice-bot
+ExecStart=/home/admin/goldprice-bot/gold-price-api
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

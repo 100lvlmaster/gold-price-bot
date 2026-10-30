@@ -8,6 +8,8 @@ import (
 	"github.com/joho/godotenv"
 )
 
+const IsDevMode = true
+
 type Config struct {
 	TelegramToken     string
 	DatabasePath      string

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"gold-price-bot.com/v2/internal/config"
 	"gold-price-bot.com/v2/internal/database"
 	"gold-price-bot.com/v2/internal/models"
 	"gold-price-bot.com/v2/internal/scraper"
@@ -79,8 +80,13 @@ func runScrapeAndBroadcast(bot TelegramBot, db *gorm.DB, gstMultiplier float64, 
 }
 
 func broadcastToAllUsers(bot TelegramBot, db *gorm.DB, latest models.GoldPrice) {
+	query := db.Where("is_active = ?", true)
+	if config.IsDevMode {
+		query = query.Where("is_admin = ?", true)
+	}
+
 	var users []models.User
-	if err := db.Where("is_active = ?", true).Find(&users).Error; err != nil {
+	if err := query.Find(&users).Error; err != nil {
 		log.Printf("Error fetching active users for broadcast: %v", err)
 		return
 	}

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"gold-price-bot.com/v2/internal/models"
-	"gorm.io/driver/sqlite"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -16,7 +16,7 @@ func InitDB(path string) *gorm.DB {
 	}
 
 	// Run Migrations
-	if err := db.AutoMigrate(&models.User{}, &models.GoldPrice{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.GoldPrice{}, &models.Setting{}); err != nil {
 		log.Fatal("Failed to run migrations:", err)
 	}
 

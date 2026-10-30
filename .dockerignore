@@ -1,0 +1,6 @@
+.git
+.env
+database.db
+data/
+tmp/
+gold-price-api
