@@ -3,11 +3,6 @@ when:
     branch: main
 
 steps:
-  - name: build
-    image: golang:1.25
-    commands:
-      - CGO_ENABLED=0 go build -ldflags="-w -s" -o gold-price-api ./cmd/api/main.go
-
   - name: deploy
     image: docker:27-cli
     volumes:
