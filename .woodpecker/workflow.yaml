@@ -6,17 +6,15 @@ steps:
   - name: build
     image: golang:1.25
     commands:
-      - CGO_ENABLED=1 go build -ldflags="-w -s" -o gold-price-api ./cmd/api/main.go
+      - CGO_ENABLED=0 go build -ldflags="-w -s" -o gold-price-api ./cmd/api/main.go
 
   - name: deploy
-    image: ubuntu:24.04
+    image: docker:27-cli
     privileged: true
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
       - /home/admin/goldprice-bot:/home/admin/goldprice-bot
-      - /run/systemd:/run/systemd
-      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket
     commands:
-      - apt-get update && apt-get install -y systemd
-      - cp gold-price-api /home/admin/goldprice-bot/gold-price-api
-      - systemctl daemon-reload
-      - systemctl restart goldprice-bot.service
+      - cp /home/admin/goldprice-bot/.env ./.env
+      - docker compose build
+      - docker compose up -d --remove-orphans
