@@ -10,7 +10,6 @@ steps:
 
   - name: deploy
     image: docker:27-cli
-    privileged: true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /home/admin/goldprice-bot:/home/admin/goldprice-bot
