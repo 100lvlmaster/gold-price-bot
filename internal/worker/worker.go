@@ -80,7 +80,7 @@ func runScrapeAndBroadcast(bot TelegramBot, db *gorm.DB, gstMultiplier float64, 
 }
 
 func broadcastToAllUsers(bot TelegramBot, db *gorm.DB, latest models.GoldPrice) {
-	query := db.Where("is_active = ?", true)
+	query := db.Where("is_active = ? OR is_admin = ?", true, true)
 	if config.IsDevMode {
 		query = query.Where("is_admin = ?", true)
 	}
