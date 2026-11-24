@@ -20,7 +20,7 @@ func main() {
 	}
 
 	// 2. Initialize Database
-	db := database.InitDB(cfg.DatabasePath)
+	database.InitDB(cfg.DatabasePath)
 
 	// 3. Initialize Telegram Bot
 	telegramBot, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
@@ -29,11 +29,11 @@ func main() {
 	}
 
 	// 4. Start Background Workers
-	bot.StartTelegramBot(telegramBot, db)
-	worker.StartGoldPriceWorker(telegramBot, db, cfg.BroadcastInterval, cfg.GSTMultiplier)
+	bot.StartTelegramBot(telegramBot)
+	worker.StartGoldPriceWorker(telegramBot, cfg.BroadcastInterval, cfg.GSTMultiplier)
 
 	// 5. Setup HTTP Handlers
-	h := handlers.NewHandler(db)
+	h := handlers.NewHandler()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", h.Ping)
 	mux.HandleFunc("/recent", h.Recent)

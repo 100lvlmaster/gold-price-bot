@@ -6,11 +6,9 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"gold-price-bot.com/v2/internal/config"
 	"gold-price-bot.com/v2/internal/database"
 	"gold-price-bot.com/v2/internal/models"
 	"gold-price-bot.com/v2/internal/scraper"
-	"gorm.io/gorm"
 )
 
 // const timeformat = "2006-01-02 03:04 PM"
@@ -20,11 +18,11 @@ type TelegramBot interface {
 	Send(c tgbotapi.Chattable) (tgbotapi.Message, error)
 }
 
-func StartGoldPriceWorker(bot TelegramBot, db *gorm.DB, intervalHours int, gstMultiplier float64) {
+func StartGoldPriceWorker(bot TelegramBot, intervalHours int, gstMultiplier float64) {
 	go func() {
 		// Run first execution immediately on startup
 		log.Println("Executing initial startup scrape and broadcast...")
-		runScrapeAndBroadcast(bot, db, gstMultiplier, true)
+		runScrapeAndBroadcast(bot, gstMultiplier, true)
 
 		ticker := time.NewTicker(time.Duration(intervalHours) * time.Hour)
 		defer ticker.Stop()
@@ -32,7 +30,7 @@ func StartGoldPriceWorker(bot TelegramBot, db *gorm.DB, intervalHours int, gstMu
 		for {
 			<-ticker.C
 			log.Println("Executing scheduled scrape and broadcast check...")
-			runScrapeAndBroadcast(bot, db, gstMultiplier, false)
+			runScrapeAndBroadcast(bot, gstMultiplier, false)
 		}
 	}()
 }
@@ -41,16 +39,16 @@ func StartGoldPriceWorker(bot TelegramBot, db *gorm.DB, intervalHours int, gstMu
 // 1. Broadcast on first run
 // 2. Skip if price hasn't changed since last time.
 // 3. Broadcast and save to DB once price changes.
-func runScrapeAndBroadcast(bot TelegramBot, db *gorm.DB, gstMultiplier float64, isStartup bool) {
+func runScrapeAndBroadcast(bot TelegramBot, gstMultiplier float64, isStartup bool) {
 	log.Println("Fetching gold price...")
 	price, err := scraper.ScrapeGoldPrice(gstMultiplier)
-	latest, latestError := database.GetLatestGoldPrice(db)
+	latest, latestError := database.GetLatestGoldPrice()
 	if err != nil {
 		log.Printf("Error scraping gold price: %v", err)
 		// If scrape fails during startup, we still try to broadcast the last known price from DB
 		if isStartup && latestError == nil {
 			log.Println("Scrape failed on startup. Broadcasting last known gold price from database...")
-			broadcastToAllUsers(bot, db, latest)
+			broadcastToAllUsers(bot, latest)
 		}
 		return
 	}
@@ -62,7 +60,7 @@ func runScrapeAndBroadcast(bot TelegramBot, db *gorm.DB, gstMultiplier float64, 
 
 	if isStartup {
 		// Always broadcast on startup
-		broadcastToAllUsers(bot, db, goldPrice)
+		broadcastToAllUsers(bot, goldPrice)
 	}
 
 	if latest.Price == price {
@@ -70,28 +68,23 @@ func runScrapeAndBroadcast(bot TelegramBot, db *gorm.DB, gstMultiplier float64, 
 		return
 	}
 
-	if err := db.Create(&goldPrice).Error; err != nil {
+	if err := database.SaveGoldPrice(goldPrice); err != nil {
 		log.Printf("Error saving gold price to database: %v", err)
 		return
 	}
 
 	log.Printf("Successfully saved gold price: %.2f", price)
-	broadcastToAllUsers(bot, db, goldPrice)
+	broadcastToAllUsers(bot, goldPrice)
 }
 
-func broadcastToAllUsers(bot TelegramBot, db *gorm.DB, latest models.GoldPrice) {
-	query := db.Where("is_active = ? OR is_admin = ?", true, true)
-	if config.IsDevMode {
-		query = query.Where("is_admin = ?", true)
-	}
-
-	var users []models.User
-	if err := query.Find(&users).Error; err != nil {
+func broadcastToAllUsers(bot TelegramBot, latest models.GoldPrice) {
+	users, err := database.GetBroadcastUsers()
+	if err != nil {
 		log.Printf("Error fetching active users for broadcast: %v", err)
 		return
 	}
 
-	// stats, err := database.GetGoldPriceStats(db)
+	// stats, err := database.GetGoldPriceStats()
 	var responseText string
 	// if err == nil {
 	responseText = fmt.Sprintf(

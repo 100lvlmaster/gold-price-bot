@@ -2,34 +2,54 @@ package database
 
 import (
 	"log"
+	"sync"
 	"time"
 
-	"gold-price-bot.com/v2/internal/models"
 	"github.com/glebarez/sqlite"
+	"gold-price-bot.com/v2/internal/config"
+	"gold-price-bot.com/v2/internal/models"
 	"gorm.io/gorm"
 )
 
-func InitDB(path string) *gorm.DB {
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
-	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
-	}
+var (
+	db   *gorm.DB
+	once sync.Once
+)
 
-	// Run Migrations
-	if err := db.AutoMigrate(&models.User{}, &models.GoldPrice{}, &models.Setting{}); err != nil {
-		log.Fatal("Failed to run migrations:", err)
-	}
+func InitDB(path string) {
+	once.Do(func() {
+		conn, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+		if err != nil {
+			log.Fatal("Failed to connect to database:", err)
+		}
 
-	return db
+		// Restrict SQLite to a single underlying connection to avoid "database is locked" errors.
+		sqlDB, err := conn.DB()
+		if err != nil {
+			log.Fatal("Failed to get underlying database handle:", err)
+		}
+		sqlDB.SetMaxOpenConns(1)
+
+		// Run Migrations
+		if err := conn.AutoMigrate(&models.User{}, &models.GoldPrice{}, &models.Setting{}); err != nil {
+			log.Fatal("Failed to run migrations:", err)
+		}
+
+		db = conn
+	})
 }
 
-func GetLatestGoldPrice(db *gorm.DB) (models.GoldPrice, error) {
+func SaveGoldPrice(goldPrice models.GoldPrice) error {
+	return db.Create(&goldPrice).Error
+}
+
+func GetLatestGoldPrice() (models.GoldPrice, error) {
 	var latestPrice models.GoldPrice
 	result := db.Order("timestamp desc").First(&latestPrice)
 	return latestPrice, result.Error
 }
 
-func GetLatestGoldPriceIfChanged(db *gorm.DB) (models.GoldPrice, bool, error) {
+func GetLatestGoldPriceIfChanged() (models.GoldPrice, bool, error) {
 	var recentPrices []models.GoldPrice
 	result := db.Order("timestamp desc").Limit(2).Find(&recentPrices)
 	if result.Error != nil {
@@ -63,7 +83,7 @@ type GoldPriceStats struct {
 	AllTimeHigh float64
 }
 
-func GetGoldPriceStats(db *gorm.DB) (GoldPriceStats, error) {
+func GetGoldPriceStats() (GoldPriceStats, error) {
 	now := time.Now().UTC()
 	oneWeekAgo := now.AddDate(0, 0, -7)
 	oneMonthAgo := now.AddDate(0, 0, -30)
@@ -118,4 +138,47 @@ func GetGoldPriceStats(db *gorm.DB) (GoldPriceStats, error) {
 	stats.AllTimeHigh = allTime.Max
 
 	return stats, nil
+}
+
+func UpsertUser(chatID int64, name string) (models.User, error) {
+	user := models.User{
+		ChatID:   chatID,
+		Name:     name,
+		IsActive: true,
+	}
+	err := db.Where(models.User{ChatID: chatID}).Assign(models.User{IsActive: true, Name: name}).FirstOrCreate(&user).Error
+	return user, err
+}
+
+func GetUser(chatID int64) (models.User, error) {
+	var user models.User
+	err := db.Where("chat_id = ?", chatID).First(&user).Error
+	return user, err
+}
+
+func SetUserActive(chatID int64, active bool) error {
+	return db.Model(&models.User{}).Where("chat_id = ?", chatID).Update("is_active", active).Error
+}
+
+func IsAdmin(chatID int64) bool {
+	user, err := GetUser(chatID)
+	if err != nil {
+		return false
+	}
+	return user.IsAdmin
+}
+
+// GetBroadcastUsers returns the users that should receive price broadcasts.
+// Admins are always included. When adminOnly is true, only admins are returned.
+func GetBroadcastUsers() ([]models.User, error) {
+	var query *gorm.DB
+	if config.IsDevMode {
+		query = db.Where("is_active = ? AND is_admin = ?", true, true)
+	} else {
+		query = db.Where("is_active = ?", true)
+	}
+
+	var users []models.User
+	err := query.Find(&users).Error
+	return users, err
 }

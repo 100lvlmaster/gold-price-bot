@@ -8,7 +8,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-const IsDevMode = false
+const IsDevMode = true
 
 type Config struct {
 	TelegramToken     string

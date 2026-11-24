@@ -9,11 +9,10 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gold-price-bot.com/v2/internal/config"
 	"gold-price-bot.com/v2/internal/database"
-	"gold-price-bot.com/v2/internal/models"
 	"gorm.io/gorm"
 )
 
-func StartTelegramBot(bot *tgbotapi.BotAPI, db *gorm.DB) {
+func StartTelegramBot(bot *tgbotapi.BotAPI) {
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
 	u := tgbotapi.NewUpdate(0)
@@ -30,21 +29,17 @@ func StartTelegramBot(bot *tgbotapi.BotAPI, db *gorm.DB) {
 			chatID := update.Message.Chat.ID
 			if update.Message.IsCommand() {
 				command := update.Message.Command()
-				handleCommand(bot, db, chatID, command, update.Message.From.UserName)
+				handleCommand(bot, chatID, command, update.Message.From.UserName)
 			}
 		}
 	}()
 }
 
-func handleCommand(bot *tgbotapi.BotAPI, db *gorm.DB, chatID int64, command string, userName string) {
+func handleCommand(bot *tgbotapi.BotAPI, chatID int64, command string, userName string) {
 	switch command {
 	case "start":
-		user := models.User{
-			ChatID:   chatID,
-			Name:     userName,
-			IsActive: true,
-		}
-		if err := db.Where(models.User{ChatID: chatID}).Assign(models.User{IsActive: true, Name: user.Name}).FirstOrCreate(&user).Error; err != nil {
+		user, err := database.UpsertUser(chatID, userName)
+		if err != nil {
 			log.Printf("Error during /start upsert: %v", err)
 			bot.Send(tgbotapi.NewMessage(chatID, "Error starting the bot. Please try again later."))
 		} else if !config.IsDevMode || user.IsAdmin {
@@ -52,10 +47,10 @@ func handleCommand(bot *tgbotapi.BotAPI, db *gorm.DB, chatID int64, command stri
 		}
 
 	case "stop":
-		if config.IsDevMode && !isAdmin(db, chatID) {
+		if config.IsDevMode && !database.IsAdmin(chatID) {
 			return
 		}
-		if err := db.Model(&models.User{}).Where("chat_id = ?", chatID).Update("is_active", false).Error; err != nil {
+		if err := database.SetUserActive(chatID, false); err != nil {
 			log.Printf("Error during /stop: %v", err)
 			bot.Send(tgbotapi.NewMessage(chatID, "Error stopping the bot. Please try again later."))
 		} else {
@@ -63,8 +58,8 @@ func handleCommand(bot *tgbotapi.BotAPI, db *gorm.DB, chatID int64, command stri
 		}
 
 	case "recent":
-		var user models.User
-		if err := db.Where("chat_id = ?", chatID).First(&user).Error; err != nil {
+		user, err := database.GetUser(chatID)
+		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				bot.Send(tgbotapi.NewMessage(chatID, "start the bot first"))
 			} else {
@@ -77,7 +72,7 @@ func handleCommand(bot *tgbotapi.BotAPI, db *gorm.DB, chatID int64, command stri
 			return
 		}
 
-		latest, err := database.GetLatestGoldPrice(db)
+		latest, err := database.GetLatestGoldPrice()
 		var responseText string
 		if err != nil {
 			responseText = "Could not fetch latest price: " + err.Error()
@@ -85,7 +80,7 @@ func handleCommand(bot *tgbotapi.BotAPI, db *gorm.DB, chatID int64, command stri
 			ist := time.FixedZone("IST", 5.5*60*60)
 			istTime := latest.Timestamp.In(ist)
 
-			stats, err := database.GetGoldPriceStats(db)
+			stats, err := database.GetGoldPriceStats()
 			if err == nil {
 				responseText = fmt.Sprintf(
 					"Latest Gold Price: ₹%.2f\n"+
@@ -113,12 +108,4 @@ func handleCommand(bot *tgbotapi.BotAPI, db *gorm.DB, chatID int64, command stri
 		msg := tgbotapi.NewMessage(chatID, responseText)
 		bot.Send(msg)
 	}
-}
-
-func isAdmin(db *gorm.DB, chatID int64) bool {
-	var user models.User
-	if err := db.Where("chat_id = ?", chatID).First(&user).Error; err != nil {
-		return false
-	}
-	return user.IsAdmin
 }
